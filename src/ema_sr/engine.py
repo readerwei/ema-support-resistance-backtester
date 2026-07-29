@@ -84,6 +84,15 @@ def _outcome_relation(row: pd.Series, mode: JudgmentMode) -> Literal["above", "b
     return _full_stick_relation(row)
 
 
+def _entry_trend(row: pd.Series, previous: pd.Series | None) -> str:
+    """Classify the EMA slope at interaction entry."""
+    if previous is None or pd.isna(previous.get("ema")) or pd.isna(row.get("ema")):
+        return "flat"
+    if np.isclose(float(row["ema"]), float(previous["ema"])):
+        return "flat"
+    return "uptrend" if float(row["ema"]) > float(previous["ema"]) else "downtrend"
+
+
 def analyze_ema_interactions(
     bars: pd.DataFrame,
     ema_period: int = 70,
@@ -121,25 +130,25 @@ def analyze_ema_interactions(
                 prev_lower = float(previous["lower_band"])
                 inside_band = lower <= close <= upper
                 if prev_close > prev_upper and inside_band:
-                    active = {"side": "support", "start": timestamp, "entry_price": close}
+                    active = {"side": "support", "start": timestamp, "entry_price": close, "trend": _entry_trend(row, previous)}
                 elif prev_close < prev_lower and inside_band:
-                    active = {"side": "resistance", "start": timestamp, "entry_price": close}
+                    active = {"side": "resistance", "start": timestamp, "entry_price": close, "trend": _entry_trend(row, previous)}
                 elif prev_close > prev_upper and close < lower:
                     if mode in {"body", "full"}:
-                        active = {"side": "support", "start": timestamp, "entry_price": prev_close}
+                        active = {"side": "support", "start": timestamp, "entry_price": prev_close, "trend": _entry_trend(row, previous)}
                         if _outcome_relation(row, mode) == "below":
                             rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
                             active = None
                     else:
-                        rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                        rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close, "trend": _entry_trend(row, previous)})
                 elif prev_close < prev_lower and close > upper:
                     if mode in {"body", "full"}:
-                        active = {"side": "resistance", "start": timestamp, "entry_price": prev_close}
+                        active = {"side": "resistance", "start": timestamp, "entry_price": prev_close, "trend": _entry_trend(row, previous)}
                         if _outcome_relation(row, mode) == "above":
                             rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
                             active = None
                     else:
-                        rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                        rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close, "trend": _entry_trend(row, previous)})
         else:
             side = active["side"]
             if mode in {"body", "full"}:
@@ -176,7 +185,7 @@ def analyze_ema_interactions(
 
     interactions = pd.DataFrame(rows)
     if interactions.empty:
-        interactions = pd.DataFrame(columns=["timestamp", "side", "start", "entry_price", "outcome", "exit_price"])
+        interactions = pd.DataFrame(columns=["timestamp", "side", "start", "entry_price", "trend", "outcome", "exit_price"])
     support = interactions[interactions["side"] == "support"] if not interactions.empty else interactions
     resistance = interactions[interactions["side"] == "resistance"] if not interactions.empty else interactions
 
@@ -191,6 +200,9 @@ def analyze_ema_interactions(
         "resistance_interactions": len(resistance),
         "resistance_bounce_pct": bounce_pct(resistance),
         "combined_bounce_pct": bounce_pct(interactions),
+        "uptrend_interactions": int((interactions["trend"] == "uptrend").sum()) if not interactions.empty else 0,
+        "downtrend_interactions": int((interactions["trend"] == "downtrend").sum()) if not interactions.empty else 0,
+        "flat_trend_interactions": int((interactions["trend"] == "flat").sum()) if not interactions.empty else 0,
         "ema_period": ema_period,
         "atr_period": atr_period,
         "atr_multiple": atr_multiple,

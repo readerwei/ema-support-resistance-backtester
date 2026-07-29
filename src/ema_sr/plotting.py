@@ -24,11 +24,11 @@ def build_interaction_figure(result: AnalysisResult, title: str) -> go.Figure:
         for side, color, label in [("support", "#3498db", "Support entry"), ("resistance", "#9b59b6", "Resistance entry")]:
             subset = starts[starts["side"] == side]
             if not subset.empty:
-                figure.add_trace(go.Scatter(x=subset["start"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), y=subset["entry_price"], mode="markers", name=label, marker={"color": color, "size": 7, "symbol": "circle-open"}, customdata=subset[["outcome"]], hovertemplate="%{x}<br>Entry: $%{y:.2f}<br>%{customdata[0]}<extra></extra>"))
+                figure.add_trace(go.Scatter(x=subset["start"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), y=subset["entry_price"], mode="markers", name=label, marker={"color": color, "size": 7, "symbol": "circle-open"}, customdata=subset[["outcome", "trend"]], hovertemplate="%{x}<br>Entry: $%{y:.2f}<br>Outcome: %{customdata[0]}<br>Trend: %{customdata[1]}<extra></extra>"))
         for outcome, color, label, symbol in [("bounce", "#2ecc71", "Bounce exit", "triangle-up"), ("penetration", "#e74c3c", "Penetration exit", "x")]:
             subset = starts[starts["outcome"] == outcome]
             if not subset.empty:
-                figure.add_trace(go.Scatter(x=subset["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), y=subset["exit_price"], mode="markers", name=label, marker={"color": color, "size": 9, "symbol": symbol}, customdata=subset[["side"]], hovertemplate="%{x}<br>Exit: $%{y:.2f}<br>%{customdata[0]}<extra></extra>"))
+                figure.add_trace(go.Scatter(x=subset["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S UTC"), y=subset["exit_price"], mode="markers", name=label, marker={"color": color, "size": 9, "symbol": symbol}, customdata=subset[["side", "trend"]], hovertemplate="%{x}<br>Exit: $%{y:.2f}<br>Side: %{customdata[0]}<br>Trend at entry: %{customdata[1]}<extra></extra>"))
 
     figure.update_layout(title=title, template="plotly_dark", hovermode="x unified", xaxis_title="Time (UTC)", yaxis_title="Price", xaxis={"rangeslider": {"visible": False}}, legend={"orientation": "h", "y": 1.02, "yanchor": "bottom"}, height=800)
     return figure
