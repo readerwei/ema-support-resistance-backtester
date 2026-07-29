@@ -1,23 +1,21 @@
 import pandas as pd
 
-from ema_sr.engine import _bar_relation
+from ema_sr import engine
 
 
-def test_body_relation_requires_both_open_and_close_outside():
-    bands = {"upper_band": 105.0, "lower_band": 95.0}
-    assert _bar_relation(pd.Series({"open": 100.0, "close": 102.0, **bands})) == "inside"
-    assert _bar_relation(pd.Series({"open": 106.0, "close": 108.0, **bands})) == "above"
-    assert _bar_relation(pd.Series({"open": 92.0, "close": 94.0, **bands})) == "below"
-    assert _bar_relation(pd.Series({"open": 104.0, "close": 106.0, **bands})) == "mixed"
-
-
-def test_body_mode_is_exposed_in_analysis_summary():
+def test_body_mode_uses_close_to_enter_but_body_to_exit(monkeypatch):
+    index = pd.date_range("2024-01-01", periods=7, freq="h", tz="UTC")
     bars = pd.DataFrame({
-        "open": [100.0, 101.0, 99.0, 102.0],
-        "high": [101.0, 102.0, 100.0, 103.0],
-        "low": [99.0, 100.0, 98.0, 101.0],
-        "close": [100.0, 101.0, 99.0, 102.0],
-        "volume": [1000.0] * 4,
-    }, index=pd.date_range("2024-01-01", periods=4, freq="h", tz="UTC"))
-    from ema_sr.engine import analyze_ema_interactions
-    assert analyze_ema_interactions(bars, ema_period=1, atr_period=1, mode="body").summary["mode"] == "body"
+        "open": [100.0, 100.0, 110.0, 110.0, 105.0, 105.2, 110.4],
+        "high": [100.1, 100.1, 110.1, 110.1, 105.3, 107.1, 108.1],
+        "low": [99.9, 99.9, 109.9, 104.9, 104.9, 105.1, 106.9],
+        "close": [100.0, 100.0, 110.0, 105.5, 105.7, 108.2, 111.0],
+        "volume": [1000.0] * 7,
+    }, index=index)
+    monkeypatch.setattr(engine, "_atr", lambda data, period: pd.Series(1.0, index=data.index))
+
+    result = engine.analyze_ema_interactions(bars, ema_period=2, atr_period=1, atr_multiple=0.5, mode="body")
+
+    assert result.interactions.iloc[0]["start"] == index[3]
+    assert result.interactions.iloc[0]["outcome"] == "bounce"
+    assert result.interactions.iloc[0]["timestamp"] == index[6]

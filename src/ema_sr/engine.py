@@ -92,30 +92,18 @@ def analyze_ema_interactions(
         lower = float(row["lower_band"])
         if active is None:
             if previous is not None and not pd.isna(previous["upper_band"]):
-                if mode == "body":
-                    previous_relation = _bar_relation(previous)
-                    relation = _bar_relation(row)
-                    if previous_relation == "above" and relation == "inside":
-                        active = {"side": "support", "start": timestamp, "entry_price": close}
-                    elif previous_relation == "below" and relation == "inside":
-                        active = {"side": "resistance", "start": timestamp, "entry_price": close}
-                    elif previous_relation == "above" and relation == "below":
-                        rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": float(previous["close"]), "exit_price": close})
-                    elif previous_relation == "below" and relation == "above":
-                        rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": float(previous["close"]), "exit_price": close})
-                else:
-                    prev_close = float(previous["close"])
-                    prev_upper = float(previous["upper_band"])
-                    prev_lower = float(previous["lower_band"])
-                    inside_band = lower <= close <= upper
-                    if prev_close > prev_upper and inside_band:
-                        active = {"side": "support", "start": timestamp, "entry_price": close}
-                    elif prev_close < prev_lower and inside_band:
-                        active = {"side": "resistance", "start": timestamp, "entry_price": close}
-                    elif prev_close > prev_upper and close < lower:
-                        rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
-                    elif prev_close < prev_lower and close > upper:
-                        rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                prev_close = float(previous["close"])
+                prev_upper = float(previous["upper_band"])
+                prev_lower = float(previous["lower_band"])
+                inside_band = lower <= close <= upper
+                if prev_close > prev_upper and inside_band:
+                    active = {"side": "support", "start": timestamp, "entry_price": close}
+                elif prev_close < prev_lower and inside_band:
+                    active = {"side": "resistance", "start": timestamp, "entry_price": close}
+                elif prev_close > prev_upper and close < lower:
+                    rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                elif prev_close < prev_lower and close > upper:
+                    rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
         else:
             side = active["side"]
             if mode == "body":
