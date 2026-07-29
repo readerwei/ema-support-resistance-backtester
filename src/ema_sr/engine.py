@@ -101,9 +101,21 @@ def analyze_ema_interactions(
                 elif prev_close < prev_lower and inside_band:
                     active = {"side": "resistance", "start": timestamp, "entry_price": close}
                 elif prev_close > prev_upper and close < lower:
-                    rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                    if mode == "body":
+                        active = {"side": "support", "start": timestamp, "entry_price": prev_close}
+                        if _bar_relation(row) == "below":
+                            rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
+                            active = None
+                    else:
+                        rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
                 elif prev_close < prev_lower and close > upper:
-                    rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
+                    if mode == "body":
+                        active = {"side": "resistance", "start": timestamp, "entry_price": prev_close}
+                        if _bar_relation(row) == "above":
+                            rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
+                            active = None
+                    else:
+                        rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
         else:
             side = active["side"]
             if mode == "body":
