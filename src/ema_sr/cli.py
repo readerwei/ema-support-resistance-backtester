@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeframe", default="1d", help="1m, 15m, 1h, 4h, 1d, 1wk, etc.")
     parser.add_argument("--session", choices=["regular", "extended"], default="regular", help="Regular hours or Yahoo pre/post-market data")
     parser.add_argument("--ema", type=int, default=70, help="EMA period to analyze")
-    parser.add_argument("--judgment", choices=["close", "body"], default="close", help="Judge exits by close price or by the full candle body")
+    parser.add_argument("--judgment", choices=["close", "body", "full"], default="close", help="Judge exits by close price, full candle body, or full candle including wicks")
     parser.add_argument("--ema-range", type=_ema_periods, default=None, help="Scan EMA periods: PERIOD or START:STOP:STEP")
     parser.add_argument("--scan-output", help="Write full EMA period scan results to CSV")
     parser.add_argument("--scan-plot", help="Write support/resistance/combined scan chart to HTML")

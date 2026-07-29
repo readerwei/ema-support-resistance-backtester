@@ -10,6 +10,9 @@ import pandas as pd
 REQUIRED_COLUMNS = {"open", "high", "low", "close", "volume"}
 
 
+JudgmentMode = Literal["close", "body", "full"]
+
+
 @dataclass(frozen=True)
 class AnalysisResult:
     bars: pd.DataFrame
@@ -60,18 +63,39 @@ def _bar_relation(row: pd.Series) -> Literal["above", "below", "inside", "mixed"
     return "mixed"
 
 
+def _full_stick_relation(row: pd.Series) -> Literal["above", "below", "inside", "mixed"]:
+    """Classify the complete candle, including wicks, relative to ATR bands."""
+    high = float(row["high"])
+    low = float(row["low"])
+    upper = float(row["upper_band"])
+    lower = float(row["lower_band"])
+    if low > upper:
+        return "above"
+    if high < lower:
+        return "below"
+    if lower <= low and high <= upper:
+        return "inside"
+    return "mixed"
+
+
+def _outcome_relation(row: pd.Series, mode: JudgmentMode) -> Literal["above", "below", "inside", "mixed"]:
+    if mode == "body":
+        return _bar_relation(row)
+    return _full_stick_relation(row)
+
+
 def analyze_ema_interactions(
     bars: pd.DataFrame,
     ema_period: int = 70,
     atr_period: int = 200,
     atr_multiple: float = 0.5,
-    mode: Literal["close", "body"] = "close",
+    mode: JudgmentMode = "close",
 ) -> AnalysisResult:
     """Classify EMA interactions using only information available at each bar close."""
     if ema_period < 1 or atr_period < 1 or atr_multiple <= 0:
         raise ValueError("Periods must be positive and atr_multiple must be greater than zero")
-    if mode not in {"close", "body"}:
-        raise ValueError("mode must be 'close' or 'body'")
+    if mode not in {"close", "body", "full"}:
+        raise ValueError("mode must be 'close', 'body', or 'full'")
     data = _validate_bars(bars)
     data = data.copy()
     data["ema"] = data["close"].ewm(span=ema_period, adjust=False, min_periods=ema_period).mean()
@@ -101,25 +125,25 @@ def analyze_ema_interactions(
                 elif prev_close < prev_lower and inside_band:
                     active = {"side": "resistance", "start": timestamp, "entry_price": close}
                 elif prev_close > prev_upper and close < lower:
-                    if mode == "body":
+                    if mode in {"body", "full"}:
                         active = {"side": "support", "start": timestamp, "entry_price": prev_close}
-                        if _bar_relation(row) == "below":
+                        if _outcome_relation(row, mode) == "below":
                             rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
                             active = None
                     else:
                         rows.append({"timestamp": timestamp, "side": "support", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
                 elif prev_close < prev_lower and close > upper:
-                    if mode == "body":
+                    if mode in {"body", "full"}:
                         active = {"side": "resistance", "start": timestamp, "entry_price": prev_close}
-                        if _bar_relation(row) == "above":
+                        if _outcome_relation(row, mode) == "above":
                             rows.append({"timestamp": timestamp, **active, "outcome": "penetration", "exit_price": close})
                             active = None
                     else:
                         rows.append({"timestamp": timestamp, "side": "resistance", "outcome": "penetration", "entry_price": prev_close, "exit_price": close})
         else:
             side = active["side"]
-            if mode == "body":
-                relation = _bar_relation(row)
+            if mode in {"body", "full"}:
+                relation = _outcome_relation(row, mode)
                 if side == "support":
                     if relation == "above":
                         rows.append({"timestamp": timestamp, **active, "outcome": "bounce", "exit_price": close})
@@ -180,7 +204,7 @@ def scan_ema_periods(
     ema_periods: Iterable[int],
     atr_period: int = 200,
     atr_multiple: float = 0.5,
-    mode: Literal["close", "body"] = "close",
+    mode: JudgmentMode = "close",
 ) -> pd.DataFrame:
     """Evaluate support, resistance, and combined bounce rates for each EMA period."""
     periods = list(ema_periods)
@@ -201,7 +225,7 @@ def scan_ema_periods(
     return pd.DataFrame(rows)
 
 
-def _best_bounce_pct(bars: pd.DataFrame, ema_periods: Iterable[int], atr_period: int, atr_multiple: float, mode: Literal["close", "body"] = "close") -> float:
+def _best_bounce_pct(bars: pd.DataFrame, ema_periods: Iterable[int], atr_period: int, atr_multiple: float, mode: JudgmentMode = "close") -> float:
     scores = [analyze_ema_interactions(bars, p, atr_period, atr_multiple, mode=mode).summary["combined_bounce_pct"] for p in ema_periods]
     return max((float(score) for score in scores if score is not None), default=0.0)
 
@@ -214,7 +238,7 @@ def monte_carlo_p_value(
     atr_multiple: float = 0.5,
     simulations: int = 1000,
     seed: int = 42,
-    mode: Literal["close", "body"] = "close",
+    mode: JudgmentMode = "close",
 ) -> float:
     """Shuffle log returns and estimate the probability of matching the observed optimum."""
     if simulations < 1:
