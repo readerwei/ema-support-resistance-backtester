@@ -81,6 +81,8 @@ uv run ema-sr --symbol AAPL --start 2025-01-01 --timeframe 1m --session extended
 
 `--session extended` maps to Yahoo's `includePrePost=true`; it does not guarantee a complete 24-hour overnight equity feed.
 
+Bounce/penetration judgment defaults to the close-based method. Use `--judgment body` for the stricter candle-body method: a bar is considered above or below a band only when **both its open and close** are beyond that band. Mixed candles that straddle a band remain unclassified, so the interaction stays active until a later candle body is fully above or below the bands.
+
 Yahoo Finance does not provide unlimited intraday history. In particular, 1-minute data is generally limited to recent days, so use a provider with appropriate historical coverage for serious testing. Timeframes such as `4h` are resampled from Yahoo's hourly data.
 
 ## Output

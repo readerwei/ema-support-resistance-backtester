@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeframe", default="1d", help="1m, 15m, 1h, 4h, 1d, 1wk, etc.")
     parser.add_argument("--session", choices=["regular", "extended"], default="regular", help="Regular hours or Yahoo pre/post-market data")
     parser.add_argument("--ema", type=int, default=70, help="EMA period to analyze")
+    parser.add_argument("--judgment", choices=["close", "body"], default="close", help="Judge exits by close price or by the full candle body")
     parser.add_argument("--ema-range", type=_ema_periods, default=None, help="Scan EMA periods: PERIOD or START:STOP:STEP")
     parser.add_argument("--scan-output", help="Write full EMA period scan results to CSV")
     parser.add_argument("--scan-plot", help="Write support/resistance/combined scan chart to HTML")
@@ -45,11 +46,11 @@ def main() -> None:
     args = build_parser().parse_args()
     end = args.end or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     bars = fetch_yahoo_bars(args.symbol, args.start, end, args.timeframe, session=args.session)
-    result = analyze_ema_interactions(bars, args.ema, args.atr_period, args.atr_multiple)
+    result = analyze_ema_interactions(bars, args.ema, args.atr_period, args.atr_multiple, mode=args.judgment)
     report = dict(result.summary)
     report.update({"symbol": args.symbol.upper(), "timeframe": args.timeframe, "session": args.session, "start": str(bars.index.min()), "end": str(bars.index.max()), "data_source": bars.attrs.get("source")})
     if args.ema_range:
-        scan = scan_ema_periods(bars, args.ema_range, args.atr_period, args.atr_multiple)
+        scan = scan_ema_periods(bars, args.ema_range, args.atr_period, args.atr_multiple, mode=args.judgment)
         report["ema_scan"] = scan.where(scan.notna(), None).to_dict(orient="records")
         best = scan.dropna(subset=["combined_bounce_pct"])
         if not best.empty:
@@ -58,16 +59,16 @@ def main() -> None:
             scan.to_csv(args.scan_output, index=False)
             report["scan_csv"] = args.scan_output
         if args.scan_plot:
-            write_period_scan_plot(scan, args.scan_plot, f"{args.symbol.upper()} {args.timeframe} EMA period scan")
+            write_period_scan_plot(scan, args.scan_plot, f"{args.symbol.upper()} {args.timeframe} {args.judgment}-judgment EMA period scan")
             report["scan_plot_html"] = args.scan_plot
     if args.monte_carlo:
         actual = report["combined_bounce_pct"]
-        report["monte_carlo_p_value"] = None if actual is None else monte_carlo_p_value(bars, float(actual), args.ema_range or [args.ema], args.atr_period, args.atr_multiple, args.monte_carlo, args.seed)
+        report["monte_carlo_p_value"] = None if actual is None else monte_carlo_p_value(bars, float(actual), args.ema_range or [args.ema], args.atr_period, args.atr_multiple, args.monte_carlo, args.seed, mode=args.judgment)
     if args.output:
         result.interactions.to_csv(args.output, index=False)
         report["interactions_csv"] = args.output
     if args.plot:
-        write_interaction_plot(result, args.plot, f"{args.symbol.upper()} {args.timeframe} EMA/ATR interactions")
+        write_interaction_plot(result, args.plot, f"{args.symbol.upper()} {args.timeframe} EMA/ATR interactions ({args.judgment} judgment)")
         report["plot_html"] = args.plot
     print(json.dumps(report, indent=2, default=str))
 
