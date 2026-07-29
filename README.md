@@ -83,7 +83,7 @@ uv run ema-sr --symbol AAPL --start 2025-01-01 --timeframe 1m --session extended
 
 Bounce/penetration judgment defaults to the close-based method. Use `--judgment body` for the stricter candle-body method: a bar is considered above or below a band only when **both its open and close** are beyond that band. Use `--judgment full` for the strictest method: the entire candle, including wicks, must be beyond the band (`low > upper` for an above exit, or `high < lower` for a below exit). Mixed candles remain unclassified, so the interaction stays active until a later candle satisfies the selected rule.
 
-Each classified interaction also records the trend at entry from the EMA slope: `uptrend`, `downtrend`, or `flat`. This label is fixed at entry and appears in interaction CSV files and chart hover details.
+Each classified interaction also records the trend at entry. The default `--trend-mode slope` is the simple EMA-slope baseline (`uptrend`, `downtrend`, or `flat`). For the improved multi-factor regime, use `--trend-mode improved`: fast/slow EMA alignment, ATR-normalized slow-EMA slope, and close location relative to the slow EMA must agree; otherwise the label is `range/mixed`. Defaults are fast EMA 20, slow EMA 50, slope lookback 5 bars, and normalized-slope threshold 0.1 ATR. Configure them with `--trend-fast-ema`, `--trend-slow-ema`, `--trend-slope-lookback`, and `--trend-slope-threshold`. The label is fixed at entry and appears in interaction CSV files and chart hover details.
 
 Yahoo Finance does not provide unlimited intraday history. In particular, 1-minute data is generally limited to recent days, so use a provider with appropriate historical coverage for serious testing. Timeframes such as `4h` are resampled from Yahoo's hourly data.
 

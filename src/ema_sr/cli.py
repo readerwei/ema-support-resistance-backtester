@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session", choices=["regular", "extended"], default="regular", help="Regular hours or Yahoo pre/post-market data")
     parser.add_argument("--ema", type=int, default=70, help="EMA period to analyze")
     parser.add_argument("--judgment", choices=["close", "body", "full"], default="close", help="Judge exits by close price, full candle body, or full candle including wicks")
+    parser.add_argument("--trend-mode", choices=["slope", "improved"], default="slope", help="Trend label: one-bar EMA slope baseline or multi-factor improved regime")
+    parser.add_argument("--trend-fast-ema", type=int, default=20)
+    parser.add_argument("--trend-slow-ema", type=int, default=50)
+    parser.add_argument("--trend-slope-lookback", type=int, default=5)
+    parser.add_argument("--trend-slope-threshold", type=float, default=0.1, help="ATR-normalized slow-EMA slope threshold")
     parser.add_argument("--ema-range", type=_ema_periods, default=None, help="Scan EMA periods: PERIOD or START:STOP:STEP")
     parser.add_argument("--scan-output", help="Write full EMA period scan results to CSV")
     parser.add_argument("--scan-plot", help="Write support/resistance/combined scan chart to HTML")
@@ -46,11 +51,11 @@ def main() -> None:
     args = build_parser().parse_args()
     end = args.end or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     bars = fetch_yahoo_bars(args.symbol, args.start, end, args.timeframe, session=args.session)
-    result = analyze_ema_interactions(bars, args.ema, args.atr_period, args.atr_multiple, mode=args.judgment)
+    result = analyze_ema_interactions(bars, args.ema, args.atr_period, args.atr_multiple, mode=args.judgment, trend_mode=args.trend_mode, trend_fast_ema=args.trend_fast_ema, trend_slow_ema=args.trend_slow_ema, trend_slope_lookback=args.trend_slope_lookback, trend_slope_threshold=args.trend_slope_threshold)
     report = dict(result.summary)
     report.update({"symbol": args.symbol.upper(), "timeframe": args.timeframe, "session": args.session, "start": str(bars.index.min()), "end": str(bars.index.max()), "data_source": bars.attrs.get("source")})
     if args.ema_range:
-        scan = scan_ema_periods(bars, args.ema_range, args.atr_period, args.atr_multiple, mode=args.judgment)
+        scan = scan_ema_periods(bars, args.ema_range, args.atr_period, args.atr_multiple, mode=args.judgment, trend_mode=args.trend_mode, trend_fast_ema=args.trend_fast_ema, trend_slow_ema=args.trend_slow_ema, trend_slope_lookback=args.trend_slope_lookback, trend_slope_threshold=args.trend_slope_threshold)
         report["ema_scan"] = scan.where(scan.notna(), None).to_dict(orient="records")
         best = scan.dropna(subset=["combined_bounce_pct"])
         if not best.empty:
@@ -63,7 +68,7 @@ def main() -> None:
             report["scan_plot_html"] = args.scan_plot
     if args.monte_carlo:
         actual = report["combined_bounce_pct"]
-        report["monte_carlo_p_value"] = None if actual is None else monte_carlo_p_value(bars, float(actual), args.ema_range or [args.ema], args.atr_period, args.atr_multiple, args.monte_carlo, args.seed, mode=args.judgment)
+        report["monte_carlo_p_value"] = None if actual is None else monte_carlo_p_value(bars, float(actual), args.ema_range or [args.ema], args.atr_period, args.atr_multiple, args.monte_carlo, args.seed, mode=args.judgment, trend_mode=args.trend_mode, trend_fast_ema=args.trend_fast_ema, trend_slow_ema=args.trend_slow_ema, trend_slope_lookback=args.trend_slope_lookback, trend_slope_threshold=args.trend_slope_threshold)
     if args.output:
         result.interactions.to_csv(args.output, index=False)
         report["interactions_csv"] = args.output
