@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session", choices=["regular", "extended"], default="regular", help="Regular hours or Yahoo pre/post-market data")
     parser.add_argument("--ema", type=int, default=70, help="EMA period to analyze")
     parser.add_argument("--judgment", choices=["close", "body", "full"], default="close", help="Judge exits by close price, full candle body, or full candle including wicks")
-    parser.add_argument("--trend-mode", choices=["slope", "improved"], default="slope", help="Trend label: one-bar EMA slope baseline or multi-factor improved regime")
+    parser.add_argument("--trend-mode", choices=["slope", "improved"], default="improved", help="Trend label: one-bar EMA slope baseline or multi-factor improved regime")
     parser.add_argument("--trend-fast-ema", type=int, default=20)
     parser.add_argument("--trend-slow-ema", type=int, default=50)
     parser.add_argument("--trend-slope-lookback", type=int, default=5)
