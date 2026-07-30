@@ -146,7 +146,6 @@ def analyze_ema_interactions(
     data["trend_fast_ema"] = data["close"].ewm(span=trend_fast_ema, adjust=False, min_periods=trend_fast_ema).mean()
     data["trend_slow_ema"] = data["close"].ewm(span=trend_slow_ema, adjust=False, min_periods=trend_slow_ema).mean()
     data["trend_slope_atr"] = (data["trend_slow_ema"] - data["trend_slow_ema"].shift(trend_slope_lookback)) / data["atr"]
-    data["regime"] = np.where(data["close"] >= data["ema"], "support", "resistance")
 
     rows: list[dict] = []
     active: dict | None = None
@@ -299,6 +298,63 @@ def _best_bounce_pct(
     return max((float(score) for score in scores if score is not None), default=0.0)
 
 
+NullDesign = Literal["bar_permutation", "legacy_return_shuffle"]
+
+
+def _null_bar_permutation(data: pd.DataFrame, rng) -> pd.DataFrame:
+    """Permute whole bars, each carrying its own wick geometry and its own gap.
+
+    Preserves the return multiset AND the intrabar geometry. The legacy design
+    below does not: rebuilding high/low from open/close yields candles with zero
+    wicks, which changes the instrument being measured rather than only its
+    ordering.
+    """
+    open_, high, low, close = (data[c].to_numpy(float) for c in ("open", "high", "low", "close"))
+    shape = np.c_[np.log(high / open_), np.log(low / open_), np.log(close / open_)]
+    gap = np.r_[0.0, np.log(open_[1:] / close[:-1])]
+    order = rng.permutation(len(data))
+    log_price = np.log(close[0])
+    o_, h_, l_, c_ = [], [], [], []
+    for k in order:
+        op = log_price + gap[k]
+        o_.append(op)
+        h_.append(op + shape[k, 0])
+        l_.append(op + shape[k, 1])
+        c_.append(op + shape[k, 2])
+        log_price = c_[-1]
+    out = data.copy()
+    out["open"], out["high"], out["low"], out["close"] = (
+        np.exp(np.asarray(x)) for x in (o_, h_, l_, c_)
+    )
+    return out
+
+
+def _null_legacy_return_shuffle(data: pd.DataFrame, rng) -> pd.DataFrame:
+    """MISCALIBRATED. Retained only to reproduce results published before the fix.
+
+    Shuffles log returns and rebuilds bars as high=max(open,close),
+    low=min(open,close). The resulting candles have zero wicks (measured mean
+    wick fraction 0.00 vs 0.40 for real bars), which mis-centres the null by
+    about -9.7pp in close mode and collapses `body` and `full` judgment into the
+    same function. Measured false-positive rate on pure random walks:
+    43% at p<0.05, against a 5% target.
+    """
+    closes = data["close"].to_numpy(float)
+    shuffled = rng.permutation(np.diff(np.log(closes)))
+    out = data.copy()
+    out["close"] = np.r_[closes[0], closes[0] * np.exp(np.cumsum(shuffled))]
+    out["open"] = out["close"].shift(1).fillna(out["close"])
+    out["high"] = out[["open", "close"]].max(axis=1)
+    out["low"] = out[["open", "close"]].min(axis=1)
+    return out
+
+
+_NULL_DESIGNS = {
+    "bar_permutation": _null_bar_permutation,
+    "legacy_return_shuffle": _null_legacy_return_shuffle,
+}
+
+
 def monte_carlo_p_value(
     bars: pd.DataFrame,
     actual_bounce_pct: float,
@@ -313,23 +369,60 @@ def monte_carlo_p_value(
     trend_slow_ema: int = 50,
     trend_slope_lookback: int = 5,
     trend_slope_threshold: float = 0.1,
+    null_design: NullDesign = "bar_permutation",
+    dither: bool = True,
 ) -> float:
-    """Shuffle log returns and estimate the probability of matching the observed optimum."""
+    """Permutation test for the best bounce rate across `ema_periods`.
+
+    `ema_periods` MUST be the same list used for the scan whose optimum produced
+    `actual_bounce_pct`; the max-statistic correction is only valid over the set
+    actually searched.
+
+    Returns the randomized (dithered) p-value. Note `(exceeded + U)/(B + 1)`,
+    not `exceeded/B`: a finite permutation test cannot justify p = 0, and the
+    smallest value B permutations support is 1/(B+1). Use
+    `monte_carlo_report` when you need the exceedance count and seed recorded.
+    """
     if simulations < 1:
         raise ValueError("simulations must be positive")
+    if null_design not in _NULL_DESIGNS:
+        raise ValueError(f"null_design must be one of {sorted(_NULL_DESIGNS)}")
+    periods = list(ema_periods)
+    if not periods:
+        raise ValueError("ema_periods must not be empty")
     data = _validate_bars(bars)
     rng = np.random.default_rng(seed)
-    closes = data["close"].to_numpy(float)
-    log_returns = np.diff(np.log(closes))
-    at_least_as_high = 0
+    build_null = _NULL_DESIGNS[null_design]
+
+    exceeded = 0
     for _ in range(simulations):
-        shuffled = rng.permutation(log_returns)
-        synthetic_close = np.r_[closes[0], closes[0] * np.exp(np.cumsum(shuffled))]
-        synthetic = data.copy()
-        synthetic["close"] = synthetic_close
-        synthetic["open"] = synthetic["close"].shift(1).fillna(synthetic["close"])
-        synthetic["high"] = synthetic[["open", "close"]].max(axis=1)
-        synthetic["low"] = synthetic[["open", "close"]].min(axis=1)
-        if _best_bounce_pct(synthetic, ema_periods, atr_period, atr_multiple, mode, trend_mode, trend_fast_ema, trend_slow_ema, trend_slope_lookback, trend_slope_threshold) >= actual_bounce_pct:
-            at_least_as_high += 1
-    return round((at_least_as_high + 1) / (simulations + 1), 6)
+        synthetic = build_null(data, rng)
+        if _best_bounce_pct(synthetic, periods, atr_period, atr_multiple, mode, trend_mode,
+                            trend_fast_ema, trend_slow_ema, trend_slope_lookback,
+                            trend_slope_threshold) >= actual_bounce_pct:
+            exceeded += 1
+
+    draw = float(rng.random()) if dither else 1.0
+    return round((exceeded + draw) / (simulations + 1), 6)
+
+
+def monte_carlo_report(*args, **kwargs) -> dict[str, float | int | str | None]:
+    """`monte_carlo_p_value` plus the provenance needed to reproduce it.
+
+    A p-value from a finite permutation sample should never be reported without
+    the exceedance count, the null design, and the seed.
+    """
+    simulations = kwargs.get("simulations", 1000)
+    seed = kwargs.get("seed", 42)
+    null_design = kwargs.get("null_design", "bar_permutation")
+    dither = kwargs.get("dither", True)
+    p = monte_carlo_p_value(*args, **kwargs)
+    conservative = min(1.0, (round(p * (simulations + 1)) + 1) / (simulations + 1))
+    return {
+        "p_value": p,
+        "p_value_conservative": round(conservative, 6),
+        "simulations": simulations,
+        "null_design": null_design,
+        "seed": seed,
+        "dither_rule": "p = (n_exceeded + U)/(B+1), U~Uniform(0,1)" if dither else "none",
+    }

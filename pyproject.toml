@@ -26,3 +26,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = ["slow: full null-calibration study; excluded from default runs"]
+addopts = "-m 'not slow'"
