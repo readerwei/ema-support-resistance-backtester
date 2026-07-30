@@ -5,3 +5,8 @@ __pycache__/
 .pytest_cache/
 *.csv
 build/
+
+# local calibration run artifacts
+calibration_*.json
+calibration_*.log
+ema_sr_null_calibration_*
